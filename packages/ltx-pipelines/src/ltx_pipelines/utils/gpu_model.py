@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import TypeVar
@@ -5,8 +6,15 @@ from typing import TypeVar
 import torch
 
 from ltx_pipelines.utils.helpers import cleanup_memory
+from ltx_pipelines.utils.runtime_logging import gpu_mem_str
 
 _M = TypeVar("_M", bound=torch.nn.Module)
+
+logger = logging.getLogger("ltx_pipelines.progress")
+
+
+def _gib(n: int) -> str:
+    return f"{n / (1024**3):.2f}G"
 
 
 @contextmanager
@@ -20,6 +28,9 @@ def gpu_model(model: _M) -> Iterator[_M]:
             ...  # use encoder — typed as the concrete class
         # GPU + CPU memory freed automatically
     """
+    cls = type(model).__name__
+    before = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
+    logger.info("gpu_model[%s] enter  %s", cls, gpu_mem_str())
     try:
         yield model
     finally:
@@ -28,3 +39,11 @@ def gpu_model(model: _M) -> Iterator[_M]:
         # of their original device (CUDA or CPU).
         model.to("meta")
         cleanup_memory()
+        after = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
+        freed = before - after  # positive = released
+        logger.info(
+            "gpu_model[%s] exit   %s  freed=%s",
+            cls,
+            gpu_mem_str(),
+            _gib(freed) if freed >= 0 else f"-{_gib(-freed)}",
+        )

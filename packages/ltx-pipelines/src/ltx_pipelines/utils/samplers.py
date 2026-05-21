@@ -4,7 +4,6 @@ from functools import partial
 from typing import Callable
 
 import torch
-from tqdm import tqdm
 
 from ltx_core.components.diffusion_steps import EulerCfgPpDiffusionStep, Res2sDiffusionStep
 from ltx_core.components.protocols import DiffusionStepProtocol
@@ -12,6 +11,7 @@ from ltx_core.model.transformer import X0Model
 from ltx_core.utils import to_denoised, to_velocity
 from ltx_pipelines.utils.helpers import post_process_latent, timesteps_from_mask
 from ltx_pipelines.utils.res2s import get_res2s_coefficients
+from ltx_pipelines.utils.runtime_logging import logged_steps
 from ltx_pipelines.utils.types import Denoiser, LatentState
 
 logger = logging.getLogger(__name__)
@@ -65,7 +65,7 @@ def euler_denoising_loop(
     tuple[LatentState | None, LatentState | None]
         Final ``(video_state, audio_state)`` after the denoising loop.
     """
-    for step_idx, _ in enumerate(tqdm(sigmas[:-1])):
+    for step_idx in logged_steps(len(sigmas) - 1, name="euler"):
         video_result, audio_result = denoiser(transformer, video_state, audio_state, sigmas, step_idx)
         denoised_video = video_result.denoised if video_result is not None else None
         denoised_audio = audio_result.denoised if audio_result is not None else None
@@ -111,7 +111,7 @@ def gradient_estimating_euler_denoising_loop(
             denoised_sample = to_denoised(noisy_sample, total_velocity, sigma)
         return current_velocity, denoised_sample
 
-    for step_idx, _ in enumerate(tqdm(sigmas[:-1])):
+    for step_idx in logged_steps(len(sigmas) - 1, name="euler-ge"):
         video_result, audio_result = denoiser(transformer, video_state, audio_state, sigmas, step_idx)
         denoised_video = video_result.denoised if video_result is not None else None
         denoised_audio = audio_result.denoised if audio_result is not None else None
@@ -276,7 +276,7 @@ def res2s_audio_video_denoising_loop(  # noqa: PLR0913,PLR0915,PLR0912
     phi_cache = {}
     c2 = 0.5  # Midpoint for res_2s
 
-    for step_idx in tqdm(range(n_full_steps)):
+    for step_idx in logged_steps(n_full_steps, name="res2s"):
         sigma = sigmas[step_idx].double()
         sigma_next = sigmas[step_idx + 1].double()
 
@@ -493,7 +493,7 @@ def euler_cfg_pp_denoising_loop(
     generator = torch.Generator(device=present_state.latent.device).manual_seed(noise_seed)
     draw_noise = stepper.eta > 0 and stepper.s_noise > 0
 
-    for step_idx, _ in enumerate(tqdm(sigmas[:-1])):
+    for step_idx in logged_steps(len(sigmas) - 1, name="euler-cfg++"):
         video_result, audio_result = denoiser(transformer, video_state, audio_state, sigmas, step_idx)
         denoised_video = video_result.denoised if video_result is not None else None
         denoised_audio = audio_result.denoised if audio_result is not None else None

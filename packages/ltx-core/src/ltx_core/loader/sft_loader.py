@@ -1,10 +1,15 @@
 import json
+import logging
+import os
+import time
 
 import safetensors
 import torch
 
 from ltx_core.loader.primitives import StateDict, StateDictLoader
 from ltx_core.loader.sd_ops import SDOps
+
+logger = logging.getLogger("ltx_pipelines.progress")
 
 
 class SafetensorsStateDictLoader(StateDictLoader):
@@ -26,7 +31,21 @@ class SafetensorsStateDictLoader(StateDictLoader):
         dtype = set()
         device = device or torch.device("cpu")
         model_paths = path if isinstance(path, list) else [path]
+        total_bytes = 0
+        for p in model_paths:
+            try:
+                total_bytes += os.path.getsize(p)
+            except OSError:
+                pass
+        logger.info(
+            "safetensors load: %d shard(s), %.2fG total -> device=%s",
+            len(model_paths),
+            total_bytes / (1024**3),
+            device,
+        )
+        t_total = time.monotonic()
         for shard_path in model_paths:
+            t_shard = time.monotonic()
             with safetensors.safe_open(shard_path, framework="pt", device=str(device)) as f:
                 safetensor_keys = f.keys()
                 for name in safetensor_keys:
@@ -41,6 +60,17 @@ class SafetensorsStateDictLoader(StateDictLoader):
                         size += value.nbytes
                         dtype.add(value.dtype)
                         sd[key] = value
+            logger.info(
+                "  shard %s loaded in %.2fs",
+                os.path.basename(shard_path),
+                time.monotonic() - t_shard,
+            )
+        logger.info(
+            "safetensors load done in %.2fs  (%d tensors, %.2fG materialized)",
+            time.monotonic() - t_total,
+            len(sd),
+            size / (1024**3),
+        )
 
         return StateDict(sd=sd, device=device, size=size, dtype=dtype)
 

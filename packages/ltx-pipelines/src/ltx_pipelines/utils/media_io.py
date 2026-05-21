@@ -15,7 +15,6 @@ import torch
 from einops import rearrange
 from PIL import Image
 from torch._prims_common import DeviceLikeType
-from tqdm import tqdm
 
 from ltx_core.hdr import LogC3
 from ltx_core.types import Audio, VideoPixelShape
@@ -434,7 +433,7 @@ def _encode_chunks_threaded(
     encoder_thread = threading.Thread(target=encoder_worker, name="h264-encoder")
     encoder_thread.start()
     try:
-        for arr in tqdm(chunks, total=progress_total):
+        for i, arr in enumerate(chunks):
             chunk_queue.put(arr)
     finally:
         chunk_queue.put(None)
